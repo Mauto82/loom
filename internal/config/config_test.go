@@ -302,3 +302,73 @@ func TestSaveIgnoreCommentedByDefaultAndPreserved(t *testing.T) {
 		t.Errorf("ignore not preserved on re-save: %v", again.Ignore)
 	}
 }
+
+// TestSavePreservesEmbeddings is a regression test: the template always wrote
+// [embeddings] commented out, so saving from the GUI settings silently turned
+// hybrid search off for users who had enabled it.
+func TestSavePreservesEmbeddings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+
+	cfg := Default()
+	cfg.Embeddings = EmbeddingConfig{
+		Enabled:   true,
+		Provider:  "openai",
+		Model:     "text-embedding-3-small",
+		Endpoint:  "https://api.openai.com",
+		APIKeyEnv: "OPENAI_API_KEY",
+		Dim:       512,
+	}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Embeddings != cfg.Embeddings {
+		t.Errorf("embeddings not preserved:\n got  %+v\n want %+v", got.Embeddings, cfg.Embeddings)
+	}
+	// The API key itself is never written, only the env var name.
+	t.Setenv("OPENAI_API_KEY", "sk-secret")
+	b, _ := os.ReadFile(path)
+	if strings.Contains(string(b), "sk-secret") {
+		t.Error("config must not contain the API key value")
+	}
+}
+
+// A user who turned embeddings off keeps their model settings on re-save.
+func TestSavePreservesDisabledEmbeddingsSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+
+	cfg := Default()
+	cfg.Embeddings = EmbeddingConfig{Provider: "ollama", Model: "embeddinggemma:300m", Endpoint: "http://localhost:11434"}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Embeddings.Enabled || got.Embeddings.Model != "embeddinggemma:300m" {
+		t.Errorf("unexpected embeddings after re-save: %+v", got.Embeddings)
+	}
+}
+
+// With no embeddings configured the template keeps only the commented example.
+func TestSaveEmbeddingsCommentedByDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := Save(Default(), path); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "# [embeddings]") || strings.Contains(string(b), "\n[embeddings]") {
+		t.Error("default template should show [embeddings] only as a commented example")
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Embeddings.Enabled {
+		t.Error("default template must not enable embeddings")
+	}
+}

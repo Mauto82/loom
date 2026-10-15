@@ -213,7 +213,17 @@ db_path    = %q
 # CPU-friendly (no GPU needed). Run "loom scan --force" after enabling or after
 # changing the model (vectors from a different model are ignored until reindexed).
 #
-# [embeddings]
+`)
+	writeEmbeddings(w, cfg.Embeddings)
+	return nil
+}
+
+// writeEmbeddings writes the user's [embeddings] block when one is configured,
+// so re-saving (e.g. from the GUI settings) never silently turns hybrid search
+// off. With nothing configured it writes the commented example instead.
+func writeEmbeddings(w io.Writer, e EmbeddingConfig) {
+	if e == (EmbeddingConfig{}) {
+		fmt.Fprint(w, `# [embeddings]
 # enabled  = true
 # provider = "ollama"
 # model    = "embeddinggemma:300m"
@@ -221,7 +231,19 @@ db_path    = %q
 # dim      = 768                    # optional; 0 = use the model's native size
 # # api_key_env = "OPENAI_API_KEY"  # only for provider = "openai"
 `)
-	return nil
+		return
+	}
+	fmt.Fprintln(w, "[embeddings]")
+	fmt.Fprintf(w, "enabled  = %t\n", e.Enabled)
+	fmt.Fprintf(w, "provider = %q\n", e.Provider)
+	fmt.Fprintf(w, "model    = %q\n", e.Model)
+	fmt.Fprintf(w, "endpoint = %q\n", e.Endpoint)
+	fmt.Fprintf(w, "dim      = %d                    # optional; 0 = use the model's native size\n", e.Dim)
+	if e.APIKeyEnv != "" {
+		fmt.Fprintf(w, "api_key_env = %q\n", e.APIKeyEnv)
+	} else {
+		fmt.Fprintln(w, `# api_key_env = "OPENAI_API_KEY"  # only for provider = "openai"`)
+	}
 }
 
 // tomlStrings formats ss as a TOML inline array of strings.
