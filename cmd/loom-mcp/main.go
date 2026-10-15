@@ -206,9 +206,17 @@ func registerTools(srv *server.MCPServer, store *storage.Store, client llmpkg.Cl
 
 	srv.AddTool(
 		mcp.NewTool("loom_get_file",
-			mcp.WithDescription("Fetch the full extracted content of a single file (so the caller can quote it verbatim or feed it to a different prompt)."),
+			mcp.WithDescription("Fetch the extracted content of a single file (so the caller can quote it verbatim or feed it to a different prompt). Returns the whole file by default; pass offset/length to read one part of a long file, e.g. around a loom_grep match."),
 			mcp.WithString("rel_path", mcp.Required(),
 				mcp.Description("File path relative to notes_dir, e.g. 'ricette.md' or 'papers/llm-wiki.pdf'")),
+			mcp.WithNumber("offset",
+				mcp.Description("Byte offset to start reading from (default: 0)"),
+				mcp.Min(0),
+			),
+			mcp.WithNumber("length",
+				mcp.Description("Maximum bytes to return (default: whole file from offset)"),
+				mcp.Min(0),
+			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			rel, err := req.RequireString("rel_path")
@@ -219,14 +227,56 @@ func registerTools(srv *server.MCPServer, store *storage.Store, client llmpkg.Cl
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
+			content, start, end := query.Range(f.Content,
+				int(req.GetFloat("offset", 0)), int(req.GetFloat("length", 0)))
 			return jsonResult(map[string]any{
-				"rel_path": f.RelPath,
-				"title":    f.Title,
-				"kind":     f.Kind,
-				"summary":  f.Summary,
-				"keywords": f.Keywords,
-				"content":  f.Content,
+				"rel_path":  f.RelPath,
+				"title":     f.Title,
+				"kind":      f.Kind,
+				"summary":   f.Summary,
+				"keywords":  f.Keywords,
+				"content":   content,
+				"offset":    start,
+				"end":       end,
+				"total_len": len(f.Content),
 			}), nil
+		},
+	)
+
+	srv.AddTool(
+		mcp.NewTool("loom_grep",
+			mcp.WithDescription("Find every line matching a regular expression in the indexed files, with line numbers and byte offsets. No LLM call. Use for exact mentions (names, codes, dates, phrases) that ranked search may miss, or to locate the relevant part of a long file and then read it with loom_get_file offset/length."),
+			mcp.WithString("pattern", mcp.Required(),
+				mcp.Description("RE2 regular expression, e.g. 'pgbouncer' or 'fattura\\s+\\d+'")),
+			mcp.WithString("rel_path",
+				mcp.Description("Restrict the search to one file (default: every indexed file)")),
+			mcp.WithBoolean("ignore_case",
+				mcp.Description("Case-insensitive match (default: true)")),
+			mcp.WithNumber("context",
+				mcp.Description("Lines of context before and after each match (default: 0)"),
+				mcp.Min(0), mcp.Max(query.MaxGrepContext),
+			),
+			mcp.WithNumber("max_matches",
+				mcp.Description(fmt.Sprintf("Maximum matching lines to return (default: %d)", query.DefaultGrepMaxMatches)),
+				mcp.Min(1), mcp.Max(query.MaxGrepMaxMatches),
+			),
+		),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			pattern, err := req.RequireString("pattern")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			res, err := query.Grep(ctx, store, query.GrepOptions{
+				Pattern:    pattern,
+				RelPath:    req.GetString("rel_path", ""),
+				IgnoreCase: req.GetBool("ignore_case", true),
+				Context:    int(req.GetFloat("context", 0)),
+				MaxMatches: int(req.GetFloat("max_matches", query.DefaultGrepMaxMatches)),
+			})
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return jsonResult(res), nil
 		},
 	)
 }
