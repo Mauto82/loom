@@ -199,7 +199,42 @@ Citations in answers carry this prefix too: `[work/meeting-notes.md]`.
 
 Loom detects that the content hash matches an existing record and reuses the summary and keywords without an extra LLM call. The old path is removed from the index automatically.
 
-Hidden directories (names starting with `.`, e.g. `.git`, `.obsidian`) are always skipped.
+### Excluding files and folders
+
+Hidden files and directories (names starting with `.`, e.g. `.git`, `.obsidian`) are always skipped. Beyond that, **Loom ignores nothing by default** — which folders are noise (build output, old drafts, archived copies, duplicate exports) is different for every person, so you write your own rules. There are two places to put them, and both are applied:
+
+**1. A `.loomignore` file at the root of a notes folder** — applies only to that folder:
+
+```gitignore
+# ~/loom/.loomignore
+# any folder named "build", at any depth
+build/
+# only the top-level archive_v1 folder
+/archive_v1/
+# any file ending in .bak
+*.bak
+drafts/**/*.old.md
+```
+
+**2. An `ignore` list in `~/.loom/config.toml`** — applied to every notes folder, handy when you'd rather not add a file inside a folder (e.g. an Obsidian vault):
+
+```toml
+notes_dirs = ["/Users/you/Documents/work", "/Users/you/Obsidian/vault"]
+ignore     = ["build/", "*.bak"]
+```
+
+Must sit at the top of the file, before `[llm]`. Patterns match paths **relative to each notes folder** (without the multi-folder prefix). Leave the key out and nothing extra is ignored.
+
+Syntax is a subset of `.gitignore`:
+
+- blank lines and lines starting with `#` are skipped (comments go on their own line)
+- a trailing `/` matches folders only (`build/`); an ignored folder is not walked at all
+- a pattern without `/` matches the name at any depth (`*.bak`, `build/`)
+- a pattern with a `/` is anchored to the notes folder root (`archive/v1/`, `/notes.md`)
+- `*`, `?`, `[abc]` work as usual; `**` matches any number of folders (`**/tmp/`, `papers/**/*.draft.md`)
+- negation (`!pattern`) is not supported
+
+Rules take effect on the next `loom scan`. Files that were already indexed and are now ignored are **removed from the index** (counted under `removed`), exactly like deleted files; un-ignore them and the next scan adds them back. An invalid pattern stops the scan with an error naming the file and line, without touching the index.
 
 ## PDFs and images
 
@@ -358,6 +393,7 @@ curl -s localhost:8080/corpora
 - Corpus names are validated to a single safe path segment (`[A-Za-z0-9_-]`, ≤64 chars), so one corpus can never read another's files.
 - The LLM and embeddings providers are **shared** across corpora (same models, same config). Hybrid search applies per corpus once its index has vectors.
 - Omitting `corpus` still works and targets the config-file corpus, so existing single-corpus integrations are unchanged.
+- Each corpus excludes files with its own `<root>/<corpus>/notes/.loomignore`. The `ignore` list in the server's config file applies only to the config-file corpus, not to tenant corpora.
 
 ## GUI
 

@@ -321,6 +321,11 @@ func (s *server) scan(w http.ResponseWriter, r *http.Request) {
 
 	ix := index.New(notesDirs, store, s.client)
 	ix.Embedder = s.embedder
+	if req.Corpus == "" {
+		// Config ignore rules belong to the config's own notes dirs. A corpus
+		// is someone else's folder: it uses only its notes/.loomignore.
+		ix.Ignore = s.cfg.Ignore
+	}
 	var res *index.Result
 	if req.Force {
 		res, err = ix.Force(r.Context())

@@ -20,6 +20,9 @@ type Config struct {
 	DBPath     string          `toml:"db_path"`
 	LLM        LLMConfig       `toml:"llm"`
 	Embeddings EmbeddingConfig `toml:"embeddings"`
+	// Ignore is an optional list of gitignore-style patterns, matched relative
+	// to each notes dir, added to that dir's own .loomignore. Empty by default.
+	Ignore []string `toml:"ignore"`
 
 	loadedFrom string
 }
@@ -110,16 +113,14 @@ func writeTemplate(cfg *Config, w io.Writer) error {
 		home, _ := os.UserHomeDir()
 		dirs = []string{filepath.Join(home, "loom")}
 	}
-	var sb strings.Builder
-	sb.WriteString("[")
-	for i, d := range dirs {
-		if i > 0 {
-			sb.WriteString(", ")
-		}
-		fmt.Fprintf(&sb, "%q", d)
+	notesDirsToml := tomlStrings(dirs)
+
+	// Keep the user's ignore list when re-saving (e.g. from the GUI settings);
+	// otherwise show a commented example only — Loom ignores nothing by default.
+	ignoreToml := `# ignore = ["build/", "*.bak"]`
+	if len(cfg.Ignore) > 0 {
+		ignoreToml = "ignore = " + tomlStrings(cfg.Ignore)
 	}
-	sb.WriteString("]")
-	notesDirsToml := sb.String()
 
 	type providerBlock struct {
 		label  string
@@ -169,6 +170,11 @@ func writeTemplate(cfg *Config, w io.Writer) error {
 notes_dirs = %s
 db_path    = %q
 
+# Optional: folders/files to leave out of the index, gitignore-style, matched
+# inside every notes dir. You can also put a .loomignore file at the root of a
+# notes dir. Nothing is ignored by default except hidden files and folders.
+%s
+
 # ── LLM provider ─────────────────────────────────────────────────────────────
 # Uncomment the block for the provider you want to use.
 # Only one [llm] block should be active at a time.
@@ -178,7 +184,7 @@ db_path    = %q
 #   export ANTHROPIC_API_KEY=sk-ant-...
 #   export OPENAI_API_KEY=sk-...
 
-`, notesDirsToml, cfg.DBPath)
+`, notesDirsToml, cfg.DBPath, ignoreToml)
 	if err != nil {
 		return err
 	}
@@ -218,6 +224,20 @@ db_path    = %q
 	return nil
 }
 
+// tomlStrings formats ss as a TOML inline array of strings.
+func tomlStrings(ss []string) string {
+	var sb strings.Builder
+	sb.WriteString("[")
+	for i, s := range ss {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		fmt.Fprintf(&sb, "%q", s)
+	}
+	sb.WriteString("]")
+	return sb.String()
+}
+
 // rawConfig is used only during TOML decoding. It holds both the new
 // notes_dirs array and the legacy notes_dir string so we can migrate
 // old config files transparently.
@@ -227,6 +247,7 @@ type rawConfig struct {
 	DBPath     string          `toml:"db_path"`
 	LLM        LLMConfig       `toml:"llm"`
 	Embeddings EmbeddingConfig `toml:"embeddings"`
+	Ignore     []string        `toml:"ignore"`
 }
 
 // Load reads config from path, merging values over Default(). A missing file
@@ -283,6 +304,7 @@ func (c *Config) merge(other *rawConfig) {
 		c.LLM.OCRModel = other.LLM.OCRModel
 	}
 	c.mergeEmbeddings(&other.Embeddings)
+	c.Ignore = other.Ignore
 }
 
 // mergeEmbeddings copies the embeddings block over defaults and, when enabled,
