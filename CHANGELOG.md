@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   optional context lines; case-insensitive by default, capped at
   `max_matches` (default 50, max 500). Finds exact mentions — names, invoice
   numbers, dates — that ranked search can miss. No LLM call.
+- **`excerpt_chars` on `POST /search`.** Integrations that compose their own
+  prompt from `/search` hits had to cut long files themselves, usually at the
+  start, losing answers deeper in the document. With `excerpt_chars: N` each
+  hit's `content` is cut to about N bytes the same way `ask` does it — the
+  file's opening plus the passage best matching the query — and the hit gains
+  `content_len` (the full length). Omitted or 0, the response is unchanged;
+  negative values are rejected with 400. Small budgets now work too: the kept
+  opening is at most a quarter of the budget, so a 1200-byte budget still has
+  room for the matching passage instead of being all head.
 - **`offset` / `length` on `loom_get_file`.** Read one byte range of a long
   file (e.g. around a `loom_grep` match) instead of the whole content. The
   response now also carries `offset`, `end` and `total_len`. Without the new

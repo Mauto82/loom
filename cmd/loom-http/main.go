@@ -24,7 +24,9 @@
 //
 //	GET  /healthz                          -> "ok"
 //	GET  /corpora                          -> {corpora:[...]}  (multi-corpus mode only)
-//	POST /search  {query, limit, corpus}   -> {hits:[{rel_path,title,kind,summary,keywords,content,rank}]}
+//	POST /search  {query, limit, corpus, excerpt_chars}
+//	                                       -> {hits:[{rel_path,title,kind,summary,keywords,content,rank}]}
+//	                                          (+content_len when excerpt_chars > 0)
 //	POST /scan    {force, corpus}          -> index counts (requires a working LLM provider)
 package main
 
@@ -250,6 +252,10 @@ type searchRequest struct {
 	Query  string `json:"query"`
 	Limit  int    `json:"limit"`
 	Corpus string `json:"corpus"`
+	// ExcerptChars, when > 0, caps each hit's content at about that many bytes,
+	// keeping the file's opening plus the passage best matching the query (the
+	// same cut `ask` uses). 0 returns full content, as before.
+	ExcerptChars int `json:"excerpt_chars"`
 }
 
 func (s *server) search(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +270,10 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.Query) == "" {
 		writeErr(w, http.StatusBadRequest, "query is required")
+		return
+	}
+	if req.ExcerptChars < 0 {
+		writeErr(w, http.StatusBadRequest, "excerpt_chars must be >= 0")
 		return
 	}
 	store, _, err := s.storeFor(req.Corpus)
@@ -283,7 +293,7 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := make([]map[string]any, 0, len(hits))
 	for _, h := range hits {
-		rows = append(rows, map[string]any{
+		row := map[string]any{
 			"rel_path": h.RelPath,
 			"title":    h.Title,
 			"kind":     h.Kind,
@@ -291,7 +301,12 @@ func (s *server) search(w http.ResponseWriter, r *http.Request) {
 			"keywords": h.Keywords,
 			"content":  h.Content,
 			"rank":     h.Rank,
-		})
+		}
+		if req.ExcerptChars > 0 {
+			row["content"] = query.Excerpt(h.Content, req.Query, req.ExcerptChars)
+			row["content_len"] = len(h.Content)
+		}
+		rows = append(rows, row)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"hits": rows})
 }

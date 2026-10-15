@@ -14,7 +14,7 @@ func filler(n int) string {
 }
 
 func TestExcerptShortContentUnchanged(t *testing.T) {
-	if got := excerpt("breve nota", "nota", 100); got != "breve nota" {
+	if got := Excerpt("breve nota", "nota", 100); got != "breve nota" {
 		t.Errorf("short content must pass through, got %q", got)
 	}
 }
@@ -22,7 +22,7 @@ func TestExcerptShortContentUnchanged(t *testing.T) {
 func TestExcerptFindsAnswerDeepInFile(t *testing.T) {
 	content := "Titolo del documento\n" + filler(20000) +
 		"\nLa configurazione di pgbouncer usa pool_mode transaction.\n" + filler(20000)
-	got := excerpt(content, "come ho configurato pgbouncer?", PerFileCharBudget)
+	got := Excerpt(content, "come ho configurato pgbouncer?", PerFileCharBudget)
 
 	if !strings.Contains(got, "pool_mode transaction") {
 		t.Error("excerpt should include the window mentioning the query term")
@@ -38,11 +38,26 @@ func TestExcerptFindsAnswerDeepInFile(t *testing.T) {
 	}
 }
 
+func TestExcerptSmallBudgetStillFindsWindow(t *testing.T) {
+	// A budget near excerptHeadChars used to be spent entirely on the head.
+	content := "Titolo\n" + filler(20000) + "\nImbarco a Civitavecchia alle 14:00.\n" + filler(20000)
+	got := Excerpt(content, "orario imbarco Civitavecchia", 1200)
+	if !strings.Contains(got, "Civitavecchia alle 14:00") {
+		t.Error("small budget should still carry the matching window")
+	}
+	if !strings.HasPrefix(got, "Titolo") {
+		t.Error("small budget should still keep a bit of the opening")
+	}
+	if len(got) > 1200+len(truncatedMarker) {
+		t.Errorf("excerpt over budget: %d bytes", len(got))
+	}
+}
+
 func TestExcerptPrefersRareTerm(t *testing.T) {
 	// "database" appears everywhere; "pgbouncer" only once, far from the start.
 	block := strings.Repeat("database tuning notes. ", 400)
 	content := block + block + "pgbouncer qui. " + block + block
-	got := excerpt(content, "database pgbouncer", 4000)
+	got := Excerpt(content, "database pgbouncer", 4000)
 	if !strings.Contains(got, "pgbouncer qui") {
 		t.Error("rare term should decide the window")
 	}
@@ -51,7 +66,7 @@ func TestExcerptPrefersRareTerm(t *testing.T) {
 func TestExcerptFallsBackToHead(t *testing.T) {
 	content := "inizio " + filler(20000)
 	for _, q := range []string{"zzzz assente", "", "di il la"} {
-		got := excerpt(content, q, 1000)
+		got := Excerpt(content, q, 1000)
 		if !strings.HasPrefix(got, "inizio ") || strings.Contains(got, "[...]\n") {
 			t.Errorf("q=%q: expected plain head truncation, got %q", q, got[:40])
 		}
@@ -63,7 +78,7 @@ func TestExcerptFallsBackToHead(t *testing.T) {
 
 func TestExcerptMatchNearStartUsesHead(t *testing.T) {
 	content := "pgbouncer in apertura. " + filler(20000)
-	got := excerpt(content, "pgbouncer", 4000)
+	got := Excerpt(content, "pgbouncer", 4000)
 	if strings.Contains(got, skippedMarker) {
 		t.Error("a match already visible in the head should not add a second window")
 	}
@@ -71,7 +86,7 @@ func TestExcerptMatchNearStartUsesHead(t *testing.T) {
 
 func TestExcerptKeepsValidUTF8(t *testing.T) {
 	content := strings.Repeat("perché è così ", 2000) + "àncora unica " + strings.Repeat("perché è così ", 2000)
-	got := excerpt(content, "àncora", 3001)
+	got := Excerpt(content, "àncora", 3001)
 	if !utf8.ValidString(got) {
 		t.Error("excerpt split a multi-byte rune")
 	}
@@ -122,5 +137,21 @@ func TestAnswerPromptUsesRelevantWindow(t *testing.T) {
 	}
 	if !strings.Contains(lc.lastPrompt, "codice del cancello è 4471") {
 		t.Error("prompt should carry the passage matching the question, not just the file head")
+	}
+}
+
+func TestSnapBackWord(t *testing.T) {
+	s := "alpha beta gàmma"
+	cases := []struct{ in, want int }{
+		{8, 6},           // inside "beta" -> start of "beta"
+		{6, 6},           // already at a word start
+		{14, 12},         // inside "gàmma", after a 2-byte NBSP
+		{len(s), len(s)}, // end of string untouched
+		{3, 3},           // no whitespace before -> rune boundary only
+	}
+	for _, c := range cases {
+		if got := snapBackWord(s, c.in); got != c.want {
+			t.Errorf("snapBackWord(%d) = %d, want %d", c.in, got, c.want)
+		}
 	}
 }
