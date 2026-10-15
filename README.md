@@ -33,7 +33,9 @@ This is a deliberate revival of [Andrej Karpathy's "LLM Wiki" pattern](https://g
 
 The summary, keywords, content, hash and mtime go into one SQLite row plus an FTS5 mirror.
 
-**Ask** — Loom runs an FTS5 BM25 search over `title + summary + keywords + content`, takes the top 5 hits, and hands their summaries + (truncated) content to the LLM with a system prompt that says "rispondi solo usando queste note, cita con `[rel_path]`". One call. The answer streams back.
+**Ask** — Loom runs an FTS5 BM25 search over `title + summary + keywords + content`, takes the top 5 hits, and hands their summaries + content to the LLM with a system prompt that says "rispondi solo usando queste note, cita con `[rel_path]`". One call. The answer streams back.
+
+Files longer than ~8000 characters don't fit whole, so Loom sends the opening of the file plus the passage that best matches the question's words (rare words weigh more). An answer on page 20 of a PDF still reaches the model; if no passage matches, the file's first 8000 characters are sent as before.
 
 That's it.
 
@@ -297,7 +299,10 @@ Tools exposed:
 | `loom_search(query, limit?)` | Raw BM25 hits, no LLM call |
 | `loom_scan(force?)` | (Re)index the notes folder |
 | `loom_list_files()` | Browse every indexed file with summary + keywords |
-| `loom_get_file(rel_path)` | Fetch full extracted content of one file |
+| `loom_get_file(rel_path, offset?, length?)` | Fetch extracted content of one file — whole, or a byte range of a long one |
+| `loom_grep(pattern, rel_path?, ignore_case?, context?, max_matches?)` | Regex over extracted content: every matching line with line number + byte offset, no LLM call |
+
+`loom_grep` and the `offset`/`length` range let Claude explore a large corpus the way it explores a codebase: grep for an exact name, code or date, then read only the part of the file around the match instead of pulling the whole document into context.
 
 ## Use Loom over HTTP (optional)
 
@@ -376,7 +381,7 @@ internal/
   extract/     Text, PDF, HTML extractors
   index/       Folder walk + LLM summarise + DB upsert
   llm/         Ollama / OpenAI / Anthropic adapters
-  query/       BM25 search → 1 LLM call → answer + citations
+  query/       BM25/hybrid search → relevant excerpt → 1 LLM call → answer + citations; regex grep
   storage/     SQLite (one `files` table + FTS5 mirror)
 extension/     Claude Desktop extension manifest (.mcpb template)
 scripts/       build-mcpb.sh — package loom-mcp as a .mcpb bundle

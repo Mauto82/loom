@@ -22,7 +22,8 @@ const (
 
 	// PerFileCharBudget caps how much body content we include per source. Five
 	// files × 8000 chars ≈ 40K chars ≈ 10K tokens, leaves headroom for a 200K
-	// model and stays usable on smaller local models too.
+	// model and stays usable on smaller local models too. Longer files are cut
+	// to their opening plus the window best matching the question (excerpt.go).
 	PerFileCharBudget = 8000
 
 	// queryTemperature / queryMaxTokens tune the answer generation call.
@@ -174,15 +175,12 @@ func pickHits(ctx context.Context, store *storage.Store, emb llm.Embedder, quest
 	return out, nil
 }
 
-// buildUserPrompt formats the BM25 hits into a plain-text prompt.
+// buildUserPrompt formats the retrieved hits into a plain-text prompt.
 func buildUserPrompt(question string, hits []*storage.Hit) string {
 	var b strings.Builder
 	b.WriteString("# Notes\n\n")
 	for i, h := range hits {
-		body := h.Content
-		if len(body) > PerFileCharBudget {
-			body = body[:PerFileCharBudget] + "\n[...truncated]"
-		}
+		body := excerpt(h.Content, question, PerFileCharBudget)
 		fmt.Fprintf(&b, "## [%s] %s\n", h.RelPath, h.Title)
 		if h.Summary != "" {
 			fmt.Fprintf(&b, "_Summary:_ %s\n\n", h.Summary)

@@ -36,7 +36,8 @@
   "tools": [
     { "name": "loom_search", "description": "BM25 search over the local index — raw hits, no LLM call" },
     { "name": "loom_ask", "description": "Ask a question; retrieves then answers with the configured LLM, with citations" },
-    { "name": "loom_get_file", "description": "Return the full indexed content of a file by rel_path" },
+    { "name": "loom_get_file", "description": "Return the indexed content of a file by rel_path, whole or as a byte range" },
+    { "name": "loom_grep", "description": "Regex search over indexed content — matching lines with offsets, no LLM call" },
     { "name": "loom_list_files", "description": "List every indexed file with summary and keywords" },
     { "name": "loom_scan", "description": "(Re)index the notes folder" }
   ]

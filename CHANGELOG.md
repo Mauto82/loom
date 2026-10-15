@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`loom_grep` MCP tool.** Regular-expression search (Go RE2, linear time)
+  over the extracted content of every indexed file, or one file via
+  `rel_path`. Returns each matching line with its line number, byte offset and
+  optional context lines; case-insensitive by default, capped at
+  `max_matches` (default 50, max 500). Finds exact mentions — names, invoice
+  numbers, dates — that ranked search can miss. No LLM call.
+- **`offset` / `length` on `loom_get_file`.** Read one byte range of a long
+  file (e.g. around a `loom_grep` match) instead of the whole content. The
+  response now also carries `offset`, `end` and `total_len`. Without the new
+  parameters the tool returns the full content exactly as before.
+
+### Changed
+- **`ask` sends the relevant part of long files, not just the start.** Files
+  over the 8000-character per-file budget used to be cut at their first 8000
+  characters, so an answer deeper in a long PDF never reached the model. Loom
+  now keeps the file's opening (~1200 characters) plus the window that best
+  matches the question's terms, weighted so rare terms decide. When nothing
+  matches, it falls back to the old head truncation. Still one LLM call; no
+  rescan or config change needed. Affects the CLI, GUI and `loom_ask`; answers
+  on long files may differ from before.
+
 ## [0.6.1] - 2026-07-31
 
 ### Fixed
