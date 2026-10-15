@@ -11,6 +11,8 @@ const (
 	// excerptHeadChars is how much of the file's opening we always keep when a
 	// file is too long to send whole: titles, abstracts and intros often answer
 	// "what is this document about" questions the relevant window would miss.
+	// Capped at a quarter of the budget so a small budget still leaves room for
+	// the window (a 1200-byte budget would otherwise be all head).
 	excerptHeadChars = 1200
 
 	// excerptStemLen caps query terms to a prefix so Italian/English inflections
@@ -26,13 +28,14 @@ const (
 	skippedMarker   = "\n\n[...]\n\n"
 )
 
-// excerpt returns at most ~budget bytes of content to show the LLM for a
+// Excerpt returns at most ~budget bytes of content to show the LLM for a
 // question. Short content is returned as-is. Long content keeps the opening
-// excerptHeadChars plus the window that best matches the question's terms, so
+// (excerptHeadChars, or a quarter of budget if smaller) plus the window that
+// best matches the question's terms, so
 // an answer buried on page 20 of a PDF is no longer cut off. When no window
 // matches any term (or the best one overlaps the opening) it falls back to the
 // plain head truncation Loom always used.
-func excerpt(content, question string, budget int) string {
+func Excerpt(content, question string, budget int) string {
 	if len(content) <= budget {
 		return content
 	}
@@ -42,7 +45,7 @@ func excerpt(content, question string, budget int) string {
 	if len(terms) == 0 {
 		return head
 	}
-	headLen := snapBack(content, excerptHeadChars)
+	headLen := snapBackWord(content, min(excerptHeadChars, budget/4))
 	winLen := budget - headLen - len(skippedMarker)
 	if winLen <= 0 {
 		return head
@@ -58,7 +61,7 @@ func excerpt(content, question string, budget int) string {
 	if end > len(content) {
 		end = len(content)
 	}
-	start, end = snapForward(content, start), snapBack(content, end)
+	start, end = snapForward(content, start), snapBackWord(content, end)
 	out := content[:headLen] + skippedMarker + content[start:end]
 	if end < len(content) {
 		out += truncatedMarker
@@ -175,6 +178,21 @@ func snapBack(s string, i int) int {
 	}
 	for i > 0 && !utf8.RuneStart(s[i]) {
 		i--
+	}
+	return i
+}
+
+// snapBackWord moves i to a rune boundary, then back to just after the
+// previous whitespace if one is close, so a cut doesn't end mid-word.
+func snapBackWord(s string, i int) int {
+	i = snapBack(s, i)
+	if i >= len(s) {
+		return i
+	}
+	lo := snapBack(s, max(0, i-80))
+	if j := strings.LastIndexFunc(s[lo:i], unicode.IsSpace); j >= 0 {
+		_, size := utf8.DecodeRuneInString(s[lo+j:])
+		return lo + j + size
 	}
 	return i
 }

@@ -351,13 +351,19 @@ LOOM_HTTP_ADDR=:8080 loom-http --config ~/.loom/config.toml
 |---|---|
 | `GET /healthz` | Liveness check |
 | `GET /corpora` | List corpora (multi-corpus mode) |
-| `POST /search {query, limit?, corpus?}` | Search hits (`rel_path,title,summary,content,rank`) — **no answer generation** (BM25, or hybrid if embeddings are on) |
+| `POST /search {query, limit?, corpus?, excerpt_chars?}` | Search hits (`rel_path,title,summary,content,rank`) — **no answer generation** (BM25, or hybrid if embeddings are on) |
 | `POST /scan {force?, corpus?}` | (Re)index the notes folder (uses the LLM to summarise) |
 
 `/search` is the natural fit for "retrieve, then let *my* model answer": your app gets the most relevant files and composes the reply with its own prompt. Example:
 
 ```bash
 curl -s localhost:8080/search -d '{"query":"check-in time","limit":3}'
+```
+
+By default each hit carries the file's full `content`. If your prompt has a size budget, pass `excerpt_chars` instead of cutting the content yourself: long files come back as their opening plus the passage that best matches the query (the same cut `ask` uses), at about that many bytes, with `content_len` telling you the full length. Short files are returned whole.
+
+```bash
+curl -s localhost:8080/search -d '{"query":"check-in time","limit":3,"excerpt_chars":3000}'
 ```
 
 `/scan` reports counters plus, whenever a file fails, the reason it failed — so an

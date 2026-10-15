@@ -180,7 +180,7 @@ func buildUserPrompt(question string, hits []*storage.Hit) string {
 	var b strings.Builder
 	b.WriteString("# Notes\n\n")
 	for i, h := range hits {
-		body := excerpt(h.Content, question, PerFileCharBudget)
+		body := Excerpt(h.Content, question, PerFileCharBudget)
 		fmt.Fprintf(&b, "## [%s] %s\n", h.RelPath, h.Title)
 		if h.Summary != "" {
 			fmt.Fprintf(&b, "_Summary:_ %s\n\n", h.Summary)

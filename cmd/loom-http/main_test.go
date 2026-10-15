@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Mauto82/loom/internal/config"
@@ -127,5 +128,48 @@ func TestCorpusRejectedWhenMultiCorpusOff(t *testing.T) {
 	code, _ = doSearch(t, s, `{"query":"x"}`)
 	if code != http.StatusOK {
 		t.Errorf("default corpus search should be 200, got %d", code)
+	}
+}
+
+func TestSearchExcerptChars(t *testing.T) {
+	s := newTestServer(t, false)
+	long := "Guida crociera\n" + strings.Repeat("informazioni generali sul viaggio. ", 1000) +
+		"\nImbarco a Civitavecchia dalle 13:00 alle 16:00.\n" +
+		strings.Repeat("informazioni generali sul viaggio. ", 1000)
+	seedCorpus(t, s, "", "crociera.md", long)
+
+	// Default: full content, no content_len — unchanged response shape.
+	_, out := doSearch(t, s, `{"query":"imbarco Civitavecchia"}`)
+	hit := out["hits"].([]any)[0].(map[string]any)
+	if hit["content"] != long {
+		t.Error("without excerpt_chars content must be the full file")
+	}
+	if _, ok := hit["content_len"]; ok {
+		t.Error("content_len must only appear when excerpt_chars is set")
+	}
+
+	// With excerpt_chars: the matching passage, within budget, plus total length.
+	_, out = doSearch(t, s, `{"query":"imbarco Civitavecchia","excerpt_chars":2000}`)
+	hit = out["hits"].([]any)[0].(map[string]any)
+	content := hit["content"].(string)
+	if !strings.Contains(content, "Civitavecchia dalle 13:00") {
+		t.Error("excerpt should carry the passage matching the query")
+	}
+	if !strings.HasPrefix(content, "Guida crociera") {
+		t.Error("excerpt should keep the file's opening")
+	}
+	if len(content) > 2000+len("\n[...truncated]") {
+		t.Errorf("excerpt over budget: %d bytes", len(content))
+	}
+	if n, _ := hit["content_len"].(float64); int(n) != len(long) {
+		t.Errorf("content_len = %v, want %d", hit["content_len"], len(long))
+	}
+}
+
+func TestSearchRejectsNegativeExcerpt(t *testing.T) {
+	s := newTestServer(t, false)
+	code, _ := doSearch(t, s, `{"query":"x","excerpt_chars":-1}`)
+	if code != http.StatusBadRequest {
+		t.Errorf("negative excerpt_chars should be 400, got %d", code)
 	}
 }
