@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-15
+
 ### Added
 - **Personal ignore rules.** Exclude folders and files from indexing with a
   gitignore-style `.loomignore` at the root of a notes dir (applies to that
@@ -191,7 +193,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Earlier releases. See the Git history and the
   [releases page](https://github.com/Mauto82/loom/releases) for details.
 
-[Unreleased]: https://github.com/Mauto82/loom/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Mauto82/loom/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Mauto82/loom/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Mauto82/loom/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Mauto82/loom/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Mauto82/loom/compare/v0.4.3...v0.5.0
