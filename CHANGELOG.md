@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rescan or config change needed. Affects the CLI, GUI and `loom_ask`; answers
   on long files may differ from before.
 
+### Fixed
+- **Saving settings in the GUI no longer turns hybrid search off.** The config
+  writer always emitted the `[embeddings]` block commented out, so saving from
+  the GUI settings dropped a user's `enabled = true` (and model, endpoint,
+  dim) and Loom silently fell back to pure BM25. The block is now written
+  active with the user's values whenever one is configured; with nothing
+  configured, `loom init` still shows only the commented example. Only the
+  `api_key_env` name is written, never the key itself.
+
 ## [0.6.1] - 2026-07-31
 
 ### Fixed
