@@ -257,6 +257,7 @@ func (a *App) Rescan(force bool) ScanResultVM {
 
 	ix := index.New(cfg.NotesDirs, store, lc)
 	ix.Embedder = emb
+	ix.Ignore = cfg.Ignore
 	if m := cfg.LLM.OCRModel; m != "" {
 		ix.Registry = extract.NewRegistryWithOCR(cfg.LLM.Endpoint, m)
 	}

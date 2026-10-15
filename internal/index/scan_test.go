@@ -5,6 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -445,5 +448,162 @@ func TestResultPayloadOmitsErrorsWhenClean(t *testing.T) {
 	}
 	if p["moved"] != 0 {
 		t.Errorf("moved should always be reported, got %v", p["moved"])
+	}
+}
+
+// mkNote writes body to rel (slash-separated) under dir, creating parents.
+func mkNote(t *testing.T, dir, rel, body string) {
+	t.Helper()
+	p := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func indexedPaths(t *testing.T, store *storage.Store) []string {
+	t.Helper()
+	files, err := store.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, f := range files {
+		out = append(out, f.RelPath)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestScanLoomignoreSkipsDirAndGlob(t *testing.T) {
+	notesDir, store, lc := setupNotes(t)
+	mkNote(t, notesDir, "book.md", "# book")
+	mkNote(t, notesDir, "build/book.md", "# build copy")
+	mkNote(t, notesDir, "chapters/build/deep.md", "# nested build dir")
+	mkNote(t, notesDir, "chapters/one.md", "# one")
+	mkNote(t, notesDir, "chapters/one.bak.md", "# backup")
+	mkNote(t, notesDir, "archive_v1/old.md", "# archived")
+	mkNote(t, notesDir, ".loomignore", "# my rules\n\nbuild/\n*.bak.md\n/archive_v1/\n")
+
+	ix := New([]string{notesDir}, store, lc)
+	res, err := ix.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"book.md", "chapters/one.md"}
+	if got := indexedPaths(t, store); !reflect.DeepEqual(got, want) {
+		t.Errorf("indexed %v, want %v", got, want)
+	}
+	if res.Added != 2 {
+		t.Errorf("expected 2 added, got %+v", res)
+	}
+}
+
+func TestScanConfigIgnoreApplied(t *testing.T) {
+	notesDir, store, lc := setupNotes(t)
+	mkNote(t, notesDir, "a.md", "# a")
+	mkNote(t, notesDir, "drafts/b.md", "# b")
+	mkNote(t, notesDir, "papers/x/c.draft.md", "# c")
+
+	ix := New([]string{notesDir}, store, lc)
+	ix.Ignore = []string{"drafts/", "papers/**/*.draft.md"}
+	if _, err := ix.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := indexedPaths(t, store), []string{"a.md"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("indexed %v, want %v", got, want)
+	}
+}
+
+// Config patterns match relative to each notes dir, not to the DB's prefixed
+// rel_path, and each dir's .loomignore stays local to that dir.
+func TestScanIgnorePerNotesDir(t *testing.T) {
+	tmp := t.TempDir()
+	work := filepath.Join(tmp, "work")
+	personal := filepath.Join(tmp, "personal")
+	mkNote(t, work, "build/w.md", "# w build")
+	mkNote(t, work, "tmp/w.md", "# w tmp")
+	mkNote(t, work, "w.md", "# w")
+	mkNote(t, work, ".loomignore", "build/\n")
+	mkNote(t, personal, "build/p.md", "# p build")
+	mkNote(t, personal, "tmp/p.md", "# p tmp")
+	store, err := storage.Open(filepath.Join(tmp, "index.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	ix := New([]string{work, personal}, store, &stubLLM{})
+	ix.Ignore = []string{"/tmp/"}
+	if _, err := ix.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"personal/build/p.md", "work/w.md"}
+	if got := indexedPaths(t, store); !reflect.DeepEqual(got, want) {
+		t.Errorf("indexed %v, want %v", got, want)
+	}
+}
+
+func TestScanRemovesFilesThatBecomeIgnored(t *testing.T) {
+	notesDir, store, lc := setupNotes(t)
+	mkNote(t, notesDir, "a.md", "# a")
+	mkNote(t, notesDir, "build/a.md", "# a (build copy)")
+
+	ix := New([]string{notesDir}, store, lc)
+	if _, err := ix.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(indexedPaths(t, store)); n != 2 {
+		t.Fatalf("expected 2 indexed before ignoring, got %d", n)
+	}
+
+	mkNote(t, notesDir, ".loomignore", "build/\n")
+	res, err := ix.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Removed != 1 {
+		t.Errorf("expected 1 removed, got %+v", res)
+	}
+	if got, want := indexedPaths(t, store), []string{"a.md"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("indexed %v, want %v", got, want)
+	}
+}
+
+func TestScanWithoutIgnoreRulesIndexesEverything(t *testing.T) {
+	notesDir, store, lc := setupNotes(t)
+	mkNote(t, notesDir, "a.md", "# a")
+	mkNote(t, notesDir, "build/a.md", "# build")
+	mkNote(t, notesDir, "archive_v1/a.bak.md", "# archive")
+
+	ix := New([]string{notesDir}, store, lc)
+	res, err := ix.Scan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Added != 3 {
+		t.Errorf("expected all 3 files indexed with no ignore rules, got %+v", res)
+	}
+}
+
+// A broken pattern fails the scan before reconciliation, so a typo in
+// .loomignore can never wipe the index.
+func TestScanBadIgnorePatternFailsWithoutRemoving(t *testing.T) {
+	notesDir, store, lc := setupNotes(t)
+	mkNote(t, notesDir, "a.md", "# a")
+	ix := New([]string{notesDir}, store, lc)
+	if _, err := ix.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	mkNote(t, notesDir, ".loomignore", "ok/\n[unclosed\n")
+	_, err := ix.Scan(context.Background())
+	if err == nil || !strings.Contains(err.Error(), ".loomignore:2") {
+		t.Fatalf("expected error pointing at .loomignore:2, got %v", err)
+	}
+	if got := indexedPaths(t, store); len(got) != 1 {
+		t.Errorf("index changed after failed scan: %v", got)
 	}
 }

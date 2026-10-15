@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Personal ignore rules.** Exclude folders and files from indexing with a
+  gitignore-style `.loomignore` at the root of a notes dir (applies to that
+  dir only) and/or an optional top-level `ignore = [...]` list in
+  `~/.loom/config.toml` (matched relative to every notes dir). Supports
+  `dir/`, `*.ext`, anchored `/path`, `**`, comments and blank lines; ignored
+  directories are not walked. Files already indexed that become ignored are
+  removed on the next scan and counted under `removed`. Loom ships no built-in
+  rules beyond the existing hidden-file skip, and configs without the key
+  behave exactly as before. In `loom-http` multi-corpus mode each corpus uses
+  its own `notes/.loomignore`; the config list applies only to the
+  config-file corpus.
 - **`loom_grep` MCP tool.** Regular-expression search (Go RE2, linear time)
   over the extracted content of every indexed file, or one file via
   `rel_path`. Returns each matching line with its line number, byte offset and

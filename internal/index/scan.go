@@ -97,6 +97,10 @@ type Indexer struct {
 	Registry   *extract.Registry
 	Concurrent int
 	OnEvent    func(Event)
+	// Ignore holds extra gitignore-style patterns (from the user's config)
+	// applied to every notes dir on top of that dir's own .loomignore. Empty
+	// by default: Loom ships no built-in ignore rules beyond hidden entries.
+	Ignore []string
 }
 
 // New creates an Indexer for one or more notes directories.
@@ -112,7 +116,7 @@ func New(notesDirs []string, store *storage.Store, lc llm.Client) *Indexer {
 }
 
 // Scan walks NotesDir and brings the DB in sync. Files not present on disk
-// are dropped from the index; new or modified files are re-summarised.
+// (or now excluded by an ignore rule) are dropped from the index; new or modified files are re-summarised.
 func (ix *Indexer) Scan(ctx context.Context) (*Result, error) {
 	return ix.scan(ctx, false)
 }
@@ -219,7 +223,8 @@ func (ix *Indexer) scan(ctx context.Context, force bool) (*Result, error) {
 	}
 	wg.Wait()
 
-	// Reconcile deletions.
+	// Reconcile deletions. Ignored files never reach disk, so a file that
+	// became ignored since the last scan is removed here like a deleted one.
 	diskByPath := make(map[string]bool, len(disk))
 	for _, e := range disk {
 		diskByPath[e.relPath] = true
@@ -383,7 +388,6 @@ type diskEntry struct {
 	mtime   int64
 }
 
-
 func (ix *Indexer) walk() ([]diskEntry, error) {
 	// When scanning more than one root directory, prefix every relPath with
 	// the basename of its root so paths stay unique in the DB.
@@ -414,21 +418,30 @@ func (ix *Indexer) walk() ([]diskEntry, error) {
 	var out []diskEntry
 	for _, root := range ix.NotesDirs {
 		prefix := prefixFor[root]
-		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		ignore, err := loadIgnore(root, ix.Ignore)
+		if err != nil {
+			return nil, err
+		}
+		err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
+			if p == root {
+				return nil
+			}
+			rel, err := filepath.Rel(root, p)
+			if err != nil {
+				return err
+			}
+			relSlash := filepath.ToSlash(rel)
 			if d.IsDir() {
-				// Skip hidden dirs (.git, .obsidian, etc.) but allow the root.
-				if p == root {
-					return nil
-				}
-				if strings.HasPrefix(d.Name(), ".") {
+				// Skip hidden dirs (.git, .obsidian, etc.) and ignored ones.
+				if strings.HasPrefix(d.Name(), ".") || ignore.Match(relSlash, true) {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			if strings.HasPrefix(d.Name(), ".") {
+			if strings.HasPrefix(d.Name(), ".") || ignore.Match(relSlash, false) {
 				return nil
 			}
 			// Ask the registry whether any extractor handles this file.
@@ -441,11 +454,6 @@ func (ix *Indexer) walk() ([]diskEntry, error) {
 			if err != nil {
 				return err
 			}
-			rel, err := filepath.Rel(root, p)
-			if err != nil {
-				return err
-			}
-			relSlash := filepath.ToSlash(rel)
 			if usePrefix {
 				relSlash = prefix + "/" + relSlash
 			}

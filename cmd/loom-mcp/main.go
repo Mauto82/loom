@@ -161,6 +161,7 @@ func registerTools(srv *server.MCPServer, store *storage.Store, client llmpkg.Cl
 			force := req.GetBool("force", false)
 			ix := index.New(cfg.NotesDirs, store, client)
 				ix.Embedder = embedder
+				ix.Ignore = cfg.Ignore
 				if m := cfg.LLM.OCRModel; m != "" {
 					ix.Registry = extract.NewRegistryWithOCR(cfg.LLM.Endpoint, m)
 				}

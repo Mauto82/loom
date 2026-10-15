@@ -146,6 +146,7 @@ func cmdScan(args []string) error {
 
 	ix := index.New(rt.cfg.NotesDirs, rt.store, rt.llm)
 	ix.Embedder = rt.embedder
+	ix.Ignore = rt.cfg.Ignore
 	if m := rt.cfg.LLM.OCRModel; m != "" {
 		ix.Registry = extract.NewRegistryWithOCR(rt.cfg.LLM.Endpoint, m)
 	}

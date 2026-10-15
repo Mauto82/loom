@@ -226,6 +226,83 @@ func TestLoadedFromReportsPath(t *testing.T) {
 	}
 }
 
+func TestLoadIgnoreList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `notes_dirs = ["/tmp/work"]
+ignore = ["build/", "*.bak"]
+[llm]
+provider = "ollama"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Ignore) != 2 || cfg.Ignore[0] != "build/" || cfg.Ignore[1] != "*.bak" {
+		t.Errorf("ignore: got %v", cfg.Ignore)
+	}
+}
+
+// Existing configs have no ignore key: they must load unchanged, with no rules.
+func TestLoadWithoutIgnoreKeyHasNoRules(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `notes_dirs = ["/tmp/work"]
+[llm]
+provider = "ollama"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Ignore) != 0 {
+		t.Errorf("expected no ignore rules, got %v", cfg.Ignore)
+	}
+	if len(Default().Ignore) != 0 {
+		t.Errorf("Default() must ship no ignore rules, got %v", Default().Ignore)
+	}
+}
+
+// The init template shows ignore only as a commented example (Loom ignores
+// nothing by default) but keeps a user's list when re-saved, e.g. by the GUI.
+func TestSaveIgnoreCommentedByDefaultAndPreserved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	if err := Save(Default(), path); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Ignore) != 0 {
+		t.Errorf("fresh template must not activate ignore rules, got %v", cfg.Ignore)
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "# ignore = ") {
+		t.Error("template should show a commented ignore example")
+	}
+
+	cfg.Ignore = []string{"archive_v1/", "*.bak"}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Ignore) != 2 || again.Ignore[0] != "archive_v1/" || again.Ignore[1] != "*.bak" {
+		t.Errorf("ignore not preserved on re-save: %v", again.Ignore)
+	}
+}
+
 // TestSavePreservesEmbeddings is a regression test: the template always wrote
 // [embeddings] commented out, so saving from the GUI settings silently turned
 // hybrid search off for users who had enabled it.
