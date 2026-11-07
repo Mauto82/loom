@@ -264,6 +264,31 @@ func (s *Store) SetVector(ctx context.Context, relPath string, vec []float32, mo
 	return err
 }
 
+// StaleVectorPaths returns the rel_path of every indexed file whose vector is
+// missing or was stored under a different embedder name than model (a model
+// switch, a new prompt format, or an earlier embedding failure). Scan uses it
+// to re-embed just those files, without re-running the LLM summary.
+func (s *Store) StaleVectorPaths(ctx context.Context, model string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT f.rel_path
+		FROM files f LEFT JOIN file_vectors v ON v.file_id = f.id
+		WHERE v.file_id IS NULL OR v.model != ?
+		ORDER BY f.rel_path`, model)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // HasVectors reports whether any file vector exists. Callers use it to decide
 // whether hybrid search is worth attempting.
 func (s *Store) HasVectors(ctx context.Context) (bool, error) {

@@ -37,12 +37,13 @@ export type ScanResult = {
   removed: number;
   skipped: number;
   failed: number;
+  reembedded: number;
   errors?: string[];
   duration_ms: number;
 };
 
 export type ScanProgress = {
-  phase: "scan" | "summarize" | "delete" | "done";
+  phase: "scan" | "summarize" | "delete" | "embed" | "done";
   rel_path: string;
   index: number;
   total: number;

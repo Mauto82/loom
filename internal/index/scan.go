@@ -22,14 +22,18 @@ import (
 
 // Result reports what changed during a scan.
 type Result struct {
-	Added    int
-	Updated  int
-	Moved    int // file moved/renamed: new path, same content, LLM skipped
-	Removed  int
-	Skipped  int
-	Failed   int
-	Errors   []FileError
-	Duration time.Duration
+	Added   int
+	Updated int
+	Moved   int // file moved/renamed: new path, same content, LLM skipped
+	Removed int
+	Skipped int
+	Failed  int
+	// Reembedded counts unchanged files whose vector was missing or stored by a
+	// different embedder (model or prompt format) and was recomputed without
+	// calling the LLM. Always 0 when no Embedder is configured.
+	Reembedded int
+	Errors     []FileError
+	Duration   time.Duration
 }
 
 // embedCharBudget caps how much of a file we feed to the embedding model. Small
@@ -37,6 +41,10 @@ type Result struct {
 // keeps the vector representative without overflowing it. Files larger than this
 // should be split upstream (one logical chunk per file).
 const embedCharBudget = 8000
+
+// embedBatch is how many files are re-embedded per Embed call when catching up
+// on stale vectors (see reembedStale).
+const embedBatch = 16
 
 // processOutcome classifies the result of processing a single file.
 type processOutcome int
@@ -64,6 +72,7 @@ func (r *Result) Payload() map[string]any {
 		"removed":     r.Removed,
 		"skipped":     r.Skipped,
 		"failed":      r.Failed,
+		"reembedded":  r.Reembedded,
 		"duration_ms": r.Duration.Milliseconds(),
 	}
 	if len(r.Errors) > 0 {
@@ -81,7 +90,7 @@ func (r *Result) Payload() map[string]any {
 
 // Event is published while a scan runs so the GUI can show progress.
 type Event struct {
-	Phase   string // "scan" | "summarize" | "delete" | "done"
+	Phase   string // "scan" | "summarize" | "delete" | "embed" | "done"
 	RelPath string
 	Index   int
 	Total   int
@@ -242,6 +251,13 @@ func (ix *Indexer) scan(ctx context.Context, force bool) (*Result, error) {
 		ix.emit(Event{Phase: "delete", RelPath: relPath})
 	}
 
+	// Unchanged files are skipped above, so a model switch (or an earlier
+	// embedding failure) would leave them without a usable vector until a
+	// --force scan, which also re-runs every LLM summary. Re-embed just those.
+	if ix.Embedder != nil {
+		res.Reembedded = ix.reembedStale(ctx)
+	}
+
 	res.Duration = time.Since(started)
 	ix.emit(Event{Phase: "done"})
 	return res, nil
@@ -342,6 +358,62 @@ func (ix *Indexer) embedFile(ctx context.Context, relPath, title, content string
 		return
 	}
 	_ = ix.Store.SetVector(ctx, relPath, vecs[0], ix.Embedder.Name())
+}
+
+// reembedStale recomputes the vector of every indexed file whose vector is
+// missing or was stored by a different embedder, from the title and content
+// already in the index (no re-extraction, no LLM). Best-effort like embedFile:
+// it stops at the first embedding error (the embedder is likely down, retrying
+// each file would only hammer it) and the next scan picks up where it left off.
+func (ix *Indexer) reembedStale(ctx context.Context) int {
+	paths, err := ix.Store.StaleVectorPaths(ctx, ix.Embedder.Name())
+	if err != nil || len(paths) == 0 {
+		return 0
+	}
+	done := 0
+	for start := 0; start < len(paths); start += embedBatch {
+		if ctx.Err() != nil {
+			return done
+		}
+		end := start + embedBatch
+		if end > len(paths) {
+			end = len(paths)
+		}
+		var batch, texts []string
+		for _, p := range paths[start:end] {
+			f, err := ix.Store.GetByRelPath(ctx, p)
+			if err != nil {
+				continue
+			}
+			text := llm.DocumentText(ix.Embedder, f.Title, f.Content)
+			if len(text) > embedCharBudget {
+				text = text[:embedCharBudget]
+			}
+			batch = append(batch, p)
+			texts = append(texts, text)
+		}
+		if len(texts) == 0 {
+			continue
+		}
+		vecs, err := ix.Embedder.Embed(ctx, texts)
+		if err != nil || len(vecs) != len(texts) {
+			if err == nil {
+				err = fmt.Errorf("embedder returned %d vectors for %d texts", len(vecs), len(texts))
+			}
+			ix.emit(Event{Phase: "embed", Index: done, Total: len(paths), Err: err})
+			return done
+		}
+		for i, p := range batch {
+			if len(vecs[i]) == 0 {
+				continue
+			}
+			if ix.Store.SetVector(ctx, p, vecs[i], ix.Embedder.Name()) == nil {
+				done++
+			}
+		}
+		ix.emit(Event{Phase: "embed", RelPath: batch[len(batch)-1], Index: done, Total: len(paths)})
+	}
+	return done
 }
 
 func (ix *Indexer) extract(absPath string) (*extract.Document, error) {

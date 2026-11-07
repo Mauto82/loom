@@ -31,6 +31,7 @@
     if (res.moved) parts.push(`${res.moved} spostati`);
     if (res.removed) parts.push(`${res.removed} rimossi`);
     if (res.skipped) parts.push(`${res.skipped} invariati`);
+    if (res.reembedded) parts.push(`${res.reembedded} vettori ricalcolati`);
     if (res.failed) parts.push(`${res.failed} falliti`);
     flash(res.failed ? "error" : "info", parts.join(", ") || "scan completato");
     refresh();

@@ -10,16 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Recommended embedding model is now `embeddinggemma-2:270m` (EmbeddingGemma 2,
   text-only; ~380 MB, 8K-token context) in the README and the generated config
-  template. `embeddinggemma:300m` keeps working; switching models needs
-  `loom scan --force` to re-embed.
+  template. `embeddinggemma:300m` keeps working; after switching models a
+  normal `loom scan` re-embeds every file (see below).
 
 ### Added
 - **EmbeddingGemma task prompts.** For `embeddinggemma*` models (v1 and v2,
   Ollama or OpenAI-compatible), queries are embedded as
   `task: search result | query: …` and files as `title: … | text: …`, as the
   model card recommends. Other models are unchanged. Vectors are tagged
-  (`…+tp1`), so existing EmbeddingGemma vectors are ignored until
-  `loom scan --force` re-embeds them; until then search falls back to BM25.
+  (`…+tp1`), so existing EmbeddingGemma vectors are ignored until they are
+  re-embedded; until then search falls back to BM25 for those files.
+- **Re-embedding without re-summarising.** A normal `loom scan` (and `POST /scan`)
+  now recomputes the vector of every unchanged file whose vector is missing or
+  was stored by a different embedder (model or prompt format), from the text
+  already in the index, in batches and without calling the LLM. Switching the
+  embedding model, or recovering from an embedder that was down during a scan,
+  no longer needs `--force` (which also re-runs every summary). The scan result
+  reports the count as `reembedded`; if the embedder fails, re-embedding stops
+  and the next scan resumes it.
 
 ### Fixed
 - Vector search now matches vectors by embedder name, not just dimension.
