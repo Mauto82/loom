@@ -113,7 +113,7 @@ func TestScanStoresVectorsWhenEmbedderSet(t *testing.T) {
 		t.Errorf("expected the embedder to be called for 2 files, got %d", emb.calls)
 	}
 	// The stored vectors must be queryable via the vector path.
-	hits, err := store.VectorSearch(context.Background(), []float32{11, 5, 1}, 5)
+	hits, err := store.VectorSearch(context.Background(), []float32{11, 5, 1}, "", 5)
 	if err != nil {
 		t.Fatalf("vector search: %v", err)
 	}
