@@ -42,10 +42,10 @@ func seedWithVectors(t *testing.T, s *storage.Store) {
 		{RelPath: "vec.md", Hash: "2", MTime: 1, Kind: "md", Title: "Vector",
 			Content: "unrelated prose", Summary: "altro", Keywords: []string{"altro"}},
 	})
-	if err := s.SetVector(context.Background(), "kw.md", []float32{0, 1, 0}, "m"); err != nil {
+	if err := s.SetVector(context.Background(), "kw.md", []float32{0, 1, 0}, "stub-embed"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetVector(context.Background(), "vec.md", []float32{1, 0, 0}, "m"); err != nil {
+	if err := s.SetVector(context.Background(), "vec.md", []float32{1, 0, 0}, "stub-embed"); err != nil {
 		t.Fatal(err)
 	}
 }

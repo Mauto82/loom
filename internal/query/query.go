@@ -122,8 +122,8 @@ func Retrieve(ctx context.Context, store *storage.Store, emb llm.Embedder, quest
 		topK = DefaultTopK
 	}
 	if emb != nil {
-		if vecs, err := emb.Embed(ctx, []string{question}); err == nil && len(vecs) == 1 && len(vecs[0]) > 0 {
-			hits, herr := store.HybridSearch(ctx, question, vecs[0], topK)
+		if vecs, err := emb.Embed(ctx, []string{llm.QueryText(emb, question)}); err == nil && len(vecs) == 1 && len(vecs[0]) > 0 {
+			hits, herr := store.HybridSearch(ctx, question, vecs[0], emb.Name(), topK)
 			if herr == nil {
 				return hits, nil
 			}

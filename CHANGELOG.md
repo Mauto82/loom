@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Recommended embedding model is now `embeddinggemma-2:270m` (EmbeddingGemma 2,
+  text-only; ~380 MB, 8K-token context) in the README and the generated config
+  template. `embeddinggemma:300m` keeps working; switching models needs
+  `loom scan --force` to re-embed.
+
+### Added
+- **EmbeddingGemma task prompts.** For `embeddinggemma*` models (v1 and v2,
+  Ollama or OpenAI-compatible), queries are embedded as
+  `task: search result | query: …` and files as `title: … | text: …`, as the
+  model card recommends. Other models are unchanged. Vectors are tagged
+  (`…+tp1`), so existing EmbeddingGemma vectors are ignored until
+  `loom scan --force` re-embeds them; until then search falls back to BM25.
+
+### Fixed
+- Vector search now matches vectors by embedder name, not just dimension.
+  Switching between two models with the same dimension (e.g. `embeddinggemma`
+  → `embeddinggemma-2`, both 768) no longer mixes incompatible vector spaces.
+
 ## [0.7.0] - 2026-10-15
 
 ### Added

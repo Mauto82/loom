@@ -276,7 +276,10 @@ func (s *Store) HasVectors(ctx context.Context) (bool, error) {
 // Vectors whose dimension differs from len(vec) (e.g. indexed with a different
 // embedding model) are skipped, so a model change degrades gracefully rather
 // than erroring — until the next `loom scan --force` re-embeds everything.
-func (s *Store) VectorSearch(ctx context.Context, vec []float32, limit int) ([]*Hit, error) {
+// When model is non-empty, only vectors stored under that embedder name are
+// considered: two models (or prompt formats) can share a dimension but not a
+// vector space, so mixing them would silently corrupt the ranking.
+func (s *Store) VectorSearch(ctx context.Context, vec []float32, model string, limit int) ([]*Hit, error) {
 	if len(vec) == 0 {
 		return nil, ErrNotFound
 	}
@@ -286,7 +289,8 @@ func (s *Store) VectorSearch(ctx context.Context, vec []float32, limit int) ([]*
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.id, f.rel_path, f.hash, f.mtime, f.kind, f.title, f.content,
 		       f.summary, f.keywords, f.indexed_at, v.vec
-		FROM file_vectors v JOIN files f ON f.id = v.file_id`)
+		FROM file_vectors v JOIN files f ON f.id = v.file_id
+		WHERE ? = '' OR v.model = ?`, model, model)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +331,8 @@ func (s *Store) VectorSearch(ctx context.Context, vec []float32, limit int) ([]*
 // fuses: a file ranked high by either signal surfaces. On the returned hits,
 // Rank holds the RRF score (higher is better — note this is the opposite sense
 // of the bm25() rank used by Search). Returns ErrNotFound if both sides empty.
-func (s *Store) HybridSearch(ctx context.Context, query string, vec []float32, limit int) ([]*Hit, error) {
+// model filters vectors by embedder name (see VectorSearch); "" accepts any.
+func (s *Store) HybridSearch(ctx context.Context, query string, vec []float32, model string, limit int) ([]*Hit, error) {
 	if limit <= 0 {
 		limit = 5
 	}
@@ -340,7 +345,7 @@ func (s *Store) HybridSearch(ctx context.Context, query string, vec []float32, l
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-	vs, err := s.VectorSearch(ctx, vec, cand)
+	vs, err := s.VectorSearch(ctx, vec, model, cand)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}

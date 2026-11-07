@@ -3,7 +3,7 @@ package llm
 // embed.go — embedding clients for optional hybrid (BM25 + vector) search.
 //
 // Embeddings are separate from the chat Client: a small embedding model
-// (e.g. Ollama "embeddinggemma:300m") turns text into a dense vector. They
+// (e.g. Ollama "embeddinggemma-2:270m") turns text into a dense vector. They
 // share the same HTTP plumbing (postJSON / newHTTPClients) as the chat clients.
 
 import (
@@ -23,13 +23,87 @@ type Embedder interface {
 	Name() string
 }
 
+// --- Task prompts -------------------------------------------------------------
+//
+// Some embedding models are trained with task-specific prompts and retrieve
+// noticeably better when queries and documents carry them. EmbeddingGemma
+// (v1 and v2) expects "task: search result | query: …" for queries and
+// "title: … | text: …" for documents. Embedders whose model needs prompts
+// implement taskFormatter; for every other model QueryText/DocumentText return
+// the plain text, so behaviour is unchanged.
+
+// promptVersion tags vectors built with task prompts. It is appended to the
+// embedder Name (stored per vector), so vectors built without prompts — or with
+// a future prompt format — are ignored at query time until re-embedded.
+const promptVersion = "+tp1"
+
+type taskFormatter interface {
+	formatQuery(q string) string
+	formatDocument(title, content string) string
+}
+
+// QueryText returns the text to embed for a search query.
+func QueryText(e Embedder, q string) string {
+	if f, ok := e.(taskFormatter); ok {
+		if out := f.formatQuery(q); out != "" {
+			return out
+		}
+	}
+	return q
+}
+
+// DocumentText returns the text to embed for an indexed file.
+func DocumentText(e Embedder, title, content string) string {
+	if f, ok := e.(taskFormatter); ok {
+		if out := f.formatDocument(title, content); out != "" {
+			return out
+		}
+	}
+	return strings.TrimSpace(title + "\n\n" + content)
+}
+
+// usesGemmaPrompts reports whether model is an EmbeddingGemma variant
+// (e.g. "embeddinggemma:300m", "embeddinggemma-2:270m", "google/embeddinggemma-300m").
+func usesGemmaPrompts(model string) bool {
+	return strings.Contains(strings.ToLower(model), "embeddinggemma")
+}
+
+// gemmaPrompts implements taskFormatter for EmbeddingGemma models; it returns
+// "" (→ plain text fallback) for any other model.
+type gemmaPrompts struct{ model string }
+
+func (g gemmaPrompts) formatQuery(q string) string {
+	if !usesGemmaPrompts(g.model) {
+		return ""
+	}
+	return "task: search result | query: " + strings.TrimSpace(q)
+}
+
+func (g gemmaPrompts) formatDocument(title, content string) string {
+	if !usesGemmaPrompts(g.model) {
+		return ""
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "none"
+	}
+	return "title: " + title + " | text: " + strings.TrimSpace(content)
+}
+
+func (g gemmaPrompts) nameSuffix() string {
+	if usesGemmaPrompts(g.model) {
+		return promptVersion
+	}
+	return ""
+}
+
 // BuildEmbedder constructs an Embedder from plain config values. It mirrors the
 // per-command buildLLM helpers so the cmd packages don't depend on config here.
 func BuildEmbedder(provider, model, endpoint, apiKey string) (Embedder, error) {
 	switch provider {
 	case "ollama", "":
 		if model == "" {
-			return nil, fmt.Errorf("ollama embeddings require a model (e.g. embeddinggemma:300m)")
+			return nil, fmt.Errorf("ollama embeddings require a model (e.g. embeddinggemma-2:270m)")
 		}
 		return NewOllamaEmbedder(endpoint, model, 0), nil
 	case "openai":
@@ -48,6 +122,7 @@ func BuildEmbedder(provider, model, endpoint, apiKey string) (Embedder, error) {
 // --- Ollama -------------------------------------------------------------------
 
 type OllamaEmbedder struct {
+	gemmaPrompts
 	endpoint string
 	model    string
 	hc       *http.Client
@@ -58,10 +133,10 @@ func NewOllamaEmbedder(endpoint, model string, timeout time.Duration) *OllamaEmb
 		endpoint = "http://localhost:11434"
 	}
 	hc, _ := newHTTPClients(timeout)
-	return &OllamaEmbedder{endpoint: strings.TrimRight(endpoint, "/"), model: model, hc: hc}
+	return &OllamaEmbedder{gemmaPrompts: gemmaPrompts{model}, endpoint: strings.TrimRight(endpoint, "/"), model: model, hc: hc}
 }
 
-func (e *OllamaEmbedder) Name() string { return "ollama-embed:" + e.model }
+func (e *OllamaEmbedder) Name() string { return "ollama-embed:" + e.model + e.nameSuffix() }
 
 type ollamaEmbedRequest struct {
 	Model string   `json:"model"`
@@ -99,6 +174,7 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 // --- OpenAI (and OpenAI-compatible endpoints) ---------------------------------
 
 type OpenAIEmbedder struct {
+	gemmaPrompts
 	endpoint string
 	model    string
 	apiKey   string
@@ -110,10 +186,10 @@ func NewOpenAIEmbedder(endpoint, model, apiKey string, timeout time.Duration) *O
 		endpoint = "https://api.openai.com"
 	}
 	hc, _ := newHTTPClients(timeout)
-	return &OpenAIEmbedder{endpoint: strings.TrimRight(endpoint, "/"), model: model, apiKey: apiKey, hc: hc}
+	return &OpenAIEmbedder{gemmaPrompts: gemmaPrompts{model}, endpoint: strings.TrimRight(endpoint, "/"), model: model, apiKey: apiKey, hc: hc}
 }
 
-func (e *OpenAIEmbedder) Name() string { return "openai-embed:" + e.model }
+func (e *OpenAIEmbedder) Name() string { return "openai-embed:" + e.model + e.nameSuffix() }
 
 type openAIEmbedRequest struct {
 	Model string   `json:"model"`

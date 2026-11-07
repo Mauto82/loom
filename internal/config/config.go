@@ -42,7 +42,7 @@ type LLMConfig struct {
 type EmbeddingConfig struct {
 	Enabled   bool   `toml:"enabled"`
 	Provider  string `toml:"provider"`    // "ollama" | "openai"
-	Model     string `toml:"model"`       // e.g. "embeddinggemma:300m"
+	Model     string `toml:"model"`       // e.g. "embeddinggemma-2:270m"
 	Endpoint  string `toml:"endpoint"`
 	APIKeyEnv string `toml:"api_key_env"` // env var name holding the key (openai)
 	Dim       int    `toml:"dim"`         // optional; 0 = use the model's native size
@@ -209,7 +209,7 @@ db_path    = %q
 # semantic similarity with BM25 (Reciprocal Rank Fusion) for better recall on
 # paraphrases and across languages. Requires an embedding model.
 #
-# Recommended: Ollama "embeddinggemma:300m" — multilingual, ~700 MB RAM,
+# Recommended: Ollama "embeddinggemma-2:270m" — multilingual, ~400 MB,
 # CPU-friendly (no GPU needed). Run "loom scan --force" after enabling or after
 # changing the model (vectors from a different model are ignored until reindexed).
 #
@@ -226,7 +226,7 @@ func writeEmbeddings(w io.Writer, e EmbeddingConfig) {
 		fmt.Fprint(w, `# [embeddings]
 # enabled  = true
 # provider = "ollama"
-# model    = "embeddinggemma:300m"
+# model    = "embeddinggemma-2:270m"
 # endpoint = "http://localhost:11434"
 # dim      = 768                    # optional; 0 = use the model's native size
 # # api_key_env = "OPENAI_API_KEY"  # only for provider = "openai"

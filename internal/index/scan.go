@@ -33,7 +33,7 @@ type Result struct {
 }
 
 // embedCharBudget caps how much of a file we feed to the embedding model. Small
-// embedding models have a short context (e.g. embeddinggemma ≈ 2K tokens); this
+// embedding models have a short context (e.g. embeddinggemma ≈ 2K tokens, embeddinggemma-2 ≈ 8K); this
 // keeps the vector representative without overflowing it. Files larger than this
 // should be split upstream (one logical chunk per file).
 const embedCharBudget = 8000
@@ -333,7 +333,7 @@ func (ix *Indexer) embedFile(ctx context.Context, relPath, title, content string
 	if ix.Embedder == nil {
 		return
 	}
-	text := strings.TrimSpace(title + "\n\n" + content)
+	text := llm.DocumentText(ix.Embedder, title, content)
 	if len(text) > embedCharBudget {
 		text = text[:embedCharBudget]
 	}

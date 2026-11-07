@@ -43,7 +43,7 @@ func TestVectorSearchRanksByCosine(t *testing.T) {
 	mustSetVector(t, s, "c.md", []float32{0.9, 0.1, 0})
 	mustSetVector(t, s, "b.md", []float32{0, 1, 0})
 
-	hits, err := s.VectorSearch(ctx, []float32{1, 0, 0}, 3)
+	hits, err := s.VectorSearch(ctx, []float32{1, 0, 0}, "", 3)
 	if err != nil {
 		t.Fatalf("vector search: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestVectorSearchSkipsDimensionMismatch(t *testing.T) {
 	mustSetVector(t, s, "a.md", []float32{1, 0}) // 2-dim — stale model
 	mustSetVector(t, s, "b.md", []float32{1, 0, 0})
 
-	hits, err := s.VectorSearch(ctx, []float32{1, 0, 0}, 5)
+	hits, err := s.VectorSearch(ctx, []float32{1, 0, 0}, "", 5)
 	if err != nil {
 		t.Fatalf("vector search: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestHybridSearchFusesBothSignals(t *testing.T) {
 	mustSetVector(t, s, "noise.md", []float32{0, 0, 1})
 
 	// Query: BM25 term "guanciale" favours kw.md; query vector favours vec.md.
-	hits, err := s.HybridSearch(ctx, "guanciale", []float32{1, 0, 0}, 5)
+	hits, err := s.HybridSearch(ctx, "guanciale", []float32{1, 0, 0}, "", 5)
 	if err != nil {
 		t.Fatalf("hybrid: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestHybridSearchFusesBothSignals(t *testing.T) {
 
 func TestHybridSearchEmptyIndex(t *testing.T) {
 	s := openTempStore(t)
-	_, err := s.HybridSearch(context.Background(), "anything", []float32{1, 0, 0}, 5)
+	_, err := s.HybridSearch(context.Background(), "anything", []float32{1, 0, 0}, "", 5)
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound on empty index, got %v", err)
 	}
@@ -142,5 +142,36 @@ func mustSetVector(t *testing.T, s *Store, relPath string, vec []float32) {
 	t.Helper()
 	if err := s.SetVector(context.Background(), relPath, vec, "test-model"); err != nil {
 		t.Fatalf("set vector %s: %v", relPath, err)
+	}
+}
+
+func TestVectorSearchFiltersByModel(t *testing.T) {
+	s := openTempStore(t)
+	ctx := context.Background()
+
+	seedFile(t, s, "a.md", "alpha")
+	seedFile(t, s, "b.md", "beta")
+	// Same dimension, different models: the vector spaces are not comparable.
+	if err := s.SetVector(ctx, "a.md", []float32{1, 0, 0}, "old-model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetVector(ctx, "b.md", []float32{0.5, 0.5, 0}, "new-model"); err != nil {
+		t.Fatal(err)
+	}
+
+	hits, err := s.VectorSearch(ctx, []float32{1, 0, 0}, "new-model", 5)
+	if err != nil {
+		t.Fatalf("vector search: %v", err)
+	}
+	if len(hits) != 1 || hits[0].RelPath != "b.md" {
+		t.Errorf("expected only the new-model vector, got %+v", hits)
+	}
+
+	all, err := s.VectorSearch(ctx, []float32{1, 0, 0}, "", 5)
+	if err != nil {
+		t.Fatalf("vector search (any model): %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("empty model should accept every vector, got %d hits", len(all))
 	}
 }
