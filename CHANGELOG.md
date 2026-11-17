@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-17
+
 ### Changed
 - Recommended embedding model is now `embeddinggemma-2:270m` (EmbeddingGemma 2,
   text-only; ~380 MB, 8K-token context) in the README and the generated config
@@ -220,7 +222,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Earlier releases. See the Git history and the
   [releases page](https://github.com/Mauto82/loom/releases) for details.
 
-[Unreleased]: https://github.com/Mauto82/loom/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Mauto82/loom/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Mauto82/loom/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Mauto82/loom/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Mauto82/loom/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Mauto82/loom/compare/v0.5.0...v0.6.0
