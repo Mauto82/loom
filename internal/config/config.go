@@ -210,8 +210,9 @@ db_path    = %q
 # paraphrases and across languages. Requires an embedding model.
 #
 # Recommended: Ollama "embeddinggemma-2:270m" — multilingual, ~400 MB,
-# CPU-friendly (no GPU needed). Run "loom scan --force" after enabling or after
-# changing the model (vectors from a different model are ignored until reindexed).
+# CPU-friendly (no GPU needed). Run "loom scan" after enabling or after changing
+# the model: it embeds the files whose vector is missing or from another model,
+# without re-running the summaries.
 #
 `)
 	writeEmbeddings(w, cfg.Embeddings)

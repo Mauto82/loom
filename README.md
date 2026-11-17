@@ -138,18 +138,18 @@ dim      = 768                     # optional; 0 = use the model's native size
 # api_key_env = "OPENAI_API_KEY"   # only for provider = "openai"
 ```
 
-Then re-index so the vectors get built:
+Then scan so the vectors get built (unchanged files are only embedded, not re-summarised):
 
 ```sh
 ollama pull embeddinggemma-2:270m   # one-time, ~380 MB
-loom scan --force
+loom scan
 ```
 
 Notes:
 
-- **Recommended model:** `embeddinggemma-2:270m` (Ollama, text-only variant of EmbeddingGemma 2) — multilingual (100+ languages, good for cross-language search), 8K-token context, CPU-friendly, no GPU required. The previous `embeddinggemma:300m` still works; switching models requires `loom scan --force`. `provider = "openai"` (or any OpenAI-compatible `/v1/embeddings` endpoint) also works.
+- **Recommended model:** `embeddinggemma-2:270m` (Ollama, text-only variant of EmbeddingGemma 2) — multilingual (100+ languages, good for cross-language search), 8K-token context, CPU-friendly, no GPU required. The previous `embeddinggemma:300m` still works; after switching models a normal `loom scan` re-embeds every file. `provider = "openai"` (or any OpenAI-compatible `/v1/embeddings` endpoint) also works.
 - **Task prompts (EmbeddingGemma).** For any `embeddinggemma*` model (v1 or v2, Ollama or OpenAI-compatible endpoint) Loom automatically adds the model's retrieval prompts — `task: search result | query: …` for questions, `title: … | text: …` for files. They clearly improve ranking, especially for cross-language queries. Other models get plain text, as before.
-- **Changing the embedding model** changes the vector space. Each vector is stored with the embedder name (model + prompt format), and vectors from a different model, prompt format or dimension are ignored until you run `loom scan --force` to re-embed everything — search degrades gracefully (back to BM25 for those files) rather than breaking.
+- **Changing the embedding model** changes the vector space. Each vector is stored with the embedder name (model + prompt format), and vectors from a different model, prompt format or dimension are ignored until they are re-embedded — search degrades gracefully (back to BM25 for those files) rather than breaking. A normal `loom scan` re-embeds those files from the text already in the index, without re-running the LLM summaries (the result reports them as `reembedded`); `--force` is not needed.
 - **Granularity is per file.** Loom embeds one vector per file (consistent with its one-row-per-file model). For long documents, split them into smaller files so each vector stays focused.
 - **Disabling** it is just `enabled = false` (or removing the block). Existing vectors are left in place but ignored; BM25 keeps working.
 

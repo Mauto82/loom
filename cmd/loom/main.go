@@ -160,6 +160,12 @@ func cmdScan(args []string) error {
 			fmt.Printf("  [%d/%d] %s\n", e.Index, e.Total, e.RelPath)
 		case "delete":
 			fmt.Printf("  removed %s (no longer on disk)\n", e.RelPath)
+		case "embed":
+			if e.Err != nil {
+				fmt.Fprintf(os.Stderr, "  re-embedding stopped after %d/%d: %v\n", e.Index, e.Total, e.Err)
+				return
+			}
+			fmt.Printf("  re-embedded %d/%d\n", e.Index, e.Total)
 		}
 	}
 
@@ -176,6 +182,9 @@ func cmdScan(args []string) error {
 
 	fmt.Printf("\nscan done in %s — %d added, %d updated, %d moved, %d skipped, %d removed",
 		res.Duration.Round(0), res.Added, res.Updated, res.Moved, res.Skipped, res.Removed)
+	if res.Reembedded > 0 {
+		fmt.Printf(", %d re-embedded", res.Reembedded)
+	}
 	if res.Failed > 0 {
 		fmt.Printf(", %d failed", res.Failed)
 		fmt.Println()

@@ -175,3 +175,24 @@ func TestVectorSearchFiltersByModel(t *testing.T) {
 		t.Errorf("empty model should accept every vector, got %d hits", len(all))
 	}
 }
+
+func TestStaleVectorPaths(t *testing.T) {
+	s := openTempStore(t)
+	ctx := context.Background()
+	seedFile(t, s, "current.md", "x")
+	seedFile(t, s, "old.md", "y")
+	seedFile(t, s, "none.md", "z")
+	if err := s.SetVector(ctx, "current.md", []float32{1, 0}, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetVector(ctx, "old.md", []float32{1, 0}, "old"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.StaleVectorPaths(ctx, "new")
+	if err != nil {
+		t.Fatalf("stale: %v", err)
+	}
+	if len(got) != 2 || got[0] != "none.md" || got[1] != "old.md" {
+		t.Errorf("stale = %v, want [none.md old.md]", got)
+	}
+}

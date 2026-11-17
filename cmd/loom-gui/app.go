@@ -136,6 +136,7 @@ type ScanResultVM struct {
 	Removed    int      `json:"removed"`
 	Skipped    int      `json:"skipped"`
 	Failed     int      `json:"failed"`
+	Reembedded int      `json:"reembedded"`
 	Errors     []string `json:"errors,omitempty"`
 	DurationMs int64    `json:"duration_ms"`
 }
@@ -293,6 +294,7 @@ func (a *App) Rescan(force bool) ScanResultVM {
 	vm.Removed = res.Removed
 	vm.Skipped = res.Skipped
 	vm.Failed = res.Failed
+	vm.Reembedded = res.Reembedded
 	vm.DurationMs = res.Duration.Milliseconds()
 	for _, fe := range res.Errors {
 		vm.Errors = append(vm.Errors, fmt.Sprintf("%s: %v", fe.RelPath, fe.Err))

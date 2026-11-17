@@ -74,10 +74,20 @@ func writeNote(t *testing.T, dir, name, body string) {
 type stubEmbedder struct {
 	mu    sync.Mutex
 	calls int
+	name  string // "" → "stub-embed"; set to simulate a different model
+	fail  bool   // when true, Embed errors (embedder down)
 }
 
-func (e *stubEmbedder) Name() string { return "stub-embed" }
+func (e *stubEmbedder) Name() string {
+	if e.name != "" {
+		return e.name
+	}
+	return "stub-embed"
+}
 func (e *stubEmbedder) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	if e.fail {
+		return nil, errors.New("embedder unavailable")
+	}
 	e.mu.Lock()
 	e.calls += len(texts)
 	e.mu.Unlock()
